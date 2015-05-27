@@ -1,11 +1,11 @@
+#include "textflag.h"
 
-//func base64_enc(src, dst []byte, alphabet []byte)
+//func base64_enc(dst, src []byte, code []byte)
 TEXT ·base64_enc(SB),NOSPLIT,$0
-    MOVQ src+0(FP), R8 // source base ptr
-    MOVQ src+8(FP), R9 // source length
-    MOVQ dst+24(FP), R10 // dest base ptr
-    MOVQ dst+32(FP), R11 // dest length
-    MOVQ dst+48(FP), R13 // alphabet base ptr
+    MOVQ dst_base+0(FP),   R10 // dest base ptr
+    MOVQ dst_len+8(FP),    R11 // dest length
+    MOVQ src_base+24(FP),  R8 // source base ptr
+    MOVQ code_base+48(FP), R13 // alphabet base ptr
 
     // Build shuffle map (LE4 -> BE3)
     MOVL $(0x00010202), R12
@@ -17,11 +17,10 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVL $(0x090a0b0b), R12
     PINSRD $(3), R12, X7
 
-    // Build 6-bit mask
-    MOVL $(0x3f000000), R12
-    PINSRD $(0), R12, X8
-    PINSRD $(1), R12, X8
-    MOVLHPS X8, X8
+    // Build 6-bit mask (4x 0x3f000000)
+    PCMPEQB X8, X8  // set to all ones
+    PSRLL $(26), X8
+    PSLLL $(24), X8
 
     // Build a register full of 0x10 == 16
     MOVL $(0x10101010), R12
@@ -36,12 +35,13 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     PINSRD $(1), R12, X10
     MOVL $(0x08090a0b), R12
     PINSRD $(2), R12, X10
-    MOVL $(0x0f0e0d0c), R12
+    MOVL $(0x0c0d0e0f), R12
     PINSRD $(3), R12, X10
 
     // Load alphabet to registers
-    CMPQ $(64), alphabet+56(FP) // alphabet base length
-    JGE end
+    MOVQ $(64), R14
+    CMPQ R14, code_len+56(FP) // alphabet base length
+    JLT loop3
     MOVOU 0(R13), X11
     MOVOU 16(R13), X12
     MOVOU 32(R13), X13
@@ -49,102 +49,104 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
 
     SHRQ $(2), R11  // dstlen /= 4
     XORQ DX, DX
-    MOVQ R9, AX  
+    MOVQ src_len+32(FP), AX
     MOVQ $(3), BX
     DIVQ BX        // srclen /= 3
     CMPQ AX, R11
     CMOVQLT AX, R11 // nPx = min(nPx_dst, nPx_src)
-    SHLQ $(2), R11  // srclen *= 4
+    SHLQ $(2), R11  // dstlen *= 4
 
-    loop:
+    loop12:
     CMPQ R11, $(16)
     JLT end
     SUBQ $(16), R11
 
     MOVOU 0(R8), X0  // read
     ADDQ $(12), R8  // inc source ptr
-    PSHUFB X7, X0   // shuffle
-
-    PXOR X1, X1
 
     // Unpack 3x8-bit -> 4x6-bit
+    PSHUFB X7, X0   // shuffle
+
+    // output byte 1
+    MOVO X0, X1
+    PSRLL $(2), X1
+    PAND X8, X1
+    PSRLL $(8), X8
+
+    // output byte 2
     MOVO X0, X2
-    PSRLD $(2), X2
+    PSRLL $(4), X2
     PAND X8, X2
-    PSRLD $(8), X8
-    MOVO X2, X1
+    PSRLL $(8), X8
+    POR X2, X1
 
+    // output byte 3
     MOVO X0, X3
-    PSRLD $(4), X3
+    PSRLL $(6), X3
     PAND X8, X3
-    PSRLD $(8), X8
+    PSRLL $(8), X8
     POR X3, X1
 
-    MOVO X0, X4
-    PSRLD $(6), X4
-    PAND X8, X4
-    PSRLD $(8), X8
-    POR X4, X1
+    // output byte 4
+    PAND X8, X0
+    POR X1, X0  // 6-bit values 0 <= v <= 63
 
-    MOVO X0, X5
-    PAND X8, X5
-    POR X5, X0  // 6-bit values
-    PSLLD $(24), X8 // reset 6-bit mask
+    PSLLL $(24), X8 // reset 6-bit mask for the next round
 
-    PSHUFB X10, X0
+    PSHUFB X10, X0 // restore order, BE -> LE
 
-    // less than 16
-    MOVO X9, X4
-    PCMPGTB X0, X4 // (a < b => b)
-    MOVO X4, X1
+    PXOR X3, X3
 
-    // less than 32
-    MOVO X9, X5
-    PSLLD $(1), X5
-    PCMPGTB X0, X5 // (a < b => b)
-    MOVO X1, X3
-    PANDN X5, X3
-    POR X3, X1
+    // map to alphabet[0:16]
+    MOVO X11, X1
+    PSHUFB X0, X1
 
-    // less than 48
-    MOVO X9, X5
-    PSLLD $(1), X5
-    POR X9, X5
-    PCMPGTB X0, X5 // (a < b => b)
-    MOVO X1, X2
-    PANDN X5, X2
-    POR X2, X1 // <- greater or equal to 48
+    PSUBB X9, X0 // subtract 16
+    PCMPGTB X0, X3 // (a < b => b) X3[n] is zero
+    PAND X3, X1  // mask result
 
-    MOVO X9, X5
-    MOVO X9, X6
-    PSLLD $(4), X5
-    PSUBB X5, X6 // 0x0f == 15
-    PAND X6, X0
+    // map to alphabet[16:32]
+    MOVO X12, X2
+    PSHUFB X0, X2
+    POR X2, X1
 
-    PAND X0, X4
-    PAND X0, X3
-    PAND X0, X2
-    PAND X0, X1
+    PSUBB X9, X0 // subtract 16
+    PCMPGTB X0, X3 // (a < b => b) X3[n] is either zero, or -1 if it matched previously
+    PAND X3, X1  // mask result
 
-    MOVO X11, X0
-    PSHUFB X4, X0
+    // map to alphabet[32:48]
+    MOVO X13, X2
+    PSHUFB X0, X2
+    POR X2, X1
 
-    MOVO X12, X4
-    PSHUFB X3, X4
-    POR X4, X0
+    PSUBB X9, X0 // subtract 16
+    PCMPGTB X0, X3 // (a < b => b) X3[n] is either zero, or -1 if it matched previously
+    PAND X3, X1  // mask result
 
-    MOV X13, X3
-    PSHUFB X2, X3
-    POR X3, X0
-
+    // map to alphabet[48:64]
     MOVO X14, X2
-    PSHUFB X1, X2
-    POR X2, X0
+    PSHUFB X0, X2
+    POR X2, X1 // result
 
-    MOVOU X1, 0(R10)
+    MOVOU X1, 0(R10) // write
     ADDQ $(16), R10 // inc dest ptr
 
-    JMP loop
+    JMP loop12
+
+    loop3:
+    CMPQ R11, $(4)
+    JLT end
+    SUBQ $(4), R11
+
+    //MOVB 16(R8), 
+    //MOVW 0(R8), AX  // read
+    //ADDQ $(3), R8  // inc source ptr
+
+    // TODO
+
+    //MOVOU X1, 0(R10) // write
+    //ADDQ $(4), R10 // inc dest ptr
+    JMP loop3
 
     end:
     RET
