@@ -97,38 +97,35 @@ loop12:
 
     PSHUFB X10, X0 // restore order, BE -> LE
 
-    PXOR X3, X3
+    PXOR X5, X5
 
     // map to alphabet[0:16]
     MOVO X11, X1
     PSHUFB X0, X1
-
     PSUBB X9, X0 // subtract 16
-    PCMPGTB X0, X3 // (a < b => b) X3[n] is zero
-    PAND X3, X1  // mask result
+    PCMPGTB X0, X5 // (a < b => b) X5[n] is zero
+    PAND X5, X1  // mask result
 
     // map to alphabet[16:32]
     MOVO X12, X2
     PSHUFB X0, X2
-    POR X2, X1
-
     PSUBB X9, X0 // subtract 16
-    PCMPGTB X0, X3 // (a < b => b) X3[n] is either zero, or -1 if it matched previously
-    PAND X3, X1  // mask result
+    PCMPGTB X0, X5 // (a < b => b) X5[n] is either zero, or -1 if it matched previously
+    POR X2, X1
+    PAND X5, X1  // mask result
 
     // map to alphabet[32:48]
-    MOVO X13, X2
-    PSHUFB X0, X2
-    POR X2, X1
-
+    MOVO X13, X3
+    PSHUFB X0, X3
     PSUBB X9, X0 // subtract 16
-    PCMPGTB X0, X3 // (a < b => b) X3[n] is either zero, or -1 if it matched previously
-    PAND X3, X1  // mask result
+    PCMPGTB X0, X5 // (a < b => b) X5[n] is either zero, or -1 if it matched previously
+    POR X3, X1
+    PAND X5, X1  // mask result
 
     // map to alphabet[48:64]
-    MOVO X14, X2
-    PSHUFB X0, X2
-    POR X2, X1 // result
+    MOVO X14, X4
+    PSHUFB X0, X4
+    POR X4, X1 // result
 
     MOVOU X1, 0(R10) // write
     ADDQ $(16), R10 // inc dest ptr
