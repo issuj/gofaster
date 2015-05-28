@@ -41,7 +41,7 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     // Load alphabet to registers
     MOVQ $(64), R14
     CMPQ R14, code_len+56(FP) // alphabet base length
-    JLT loop3
+    JLT end
     MOVOU 0(R13), X11
     MOVOU 16(R13), X12
     MOVOU 32(R13), X13
@@ -52,14 +52,16 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVQ src_len+32(FP), AX
     MOVQ $(3), BX
     DIVQ BX        // srclen /= 3
-    CMPQ AX, R11
-    CMOVQLT AX, R11 // nPx = min(nPx_dst, nPx_src)
-    SHLQ $(2), R11  // dstlen *= 4
+    CMPQ R11, AX
+    CMOVQLT R11, AX // nPx = min(nPx_dst, nPx_src)
+    MULQ BX         // min len *= 3
+    MOVQ AX, R11
 
-    loop12:
-    CMPQ R11, $(16)
-    JLT end
-    SUBQ $(16), R11
+    //JMP loop3 // <- to test just the tail loop
+loop12:
+    CMPQ R11, $(16) // CMP to 16 instead of 12, because we do 16 byte reads
+    JLT loop3
+    SUBQ $(12), R11 // But we decrement remaining count by 12
 
     MOVOU 0(R8), X0  // read
     ADDQ $(12), R8  // inc source ptr
@@ -133,20 +135,35 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
 
     JMP loop12
 
-    loop3:
-    CMPQ R11, $(4)
+loop3:
+    CMPQ R11, $(3)
     JLT end
-    SUBQ $(4), R11
+    SUBQ $(3), R11
 
-    //MOVB 16(R8), 
-    //MOVW 0(R8), AX  // read
-    //ADDQ $(3), R8  // inc source ptr
+    MOVWQZX 0(R8), AX  // read
+    SHLL $(8), AX
+    BSWAPL AX
+    MOVB 2(R8), AX // read
+    ADDQ $(3), R8   // inc source ptr
 
-    // TODO
+    XORQ DX, DX
+    MOVQ $(4), R12
 
-    //MOVOU X1, 0(R10) // write
-    //ADDQ $(4), R10 // inc dest ptr
+loop3_inner:
+    SHLL $(8), DX
+    MOVQ $(0x3f), CX
+    ANDB AX, CX
+    ADDQ R13, CX
+    MOVBLZX 0(CX), CX
+    ORL CX, DX
+    SHRL $(6), AX
+
+    DECB R12
+    JNZ loop3_inner
+
+    MOVL DX, 0(R10) // write
+    ADDQ $(4), R10 // inc dest ptr
     JMP loop3
 
-    end:
+end:
     RET
