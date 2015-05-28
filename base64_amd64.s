@@ -8,19 +8,18 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVQ code_base+48(FP), R13 // alphabet base ptr
 
     // Build shuffle map (LE4 -> BE3)
-    MOVL $(0x00010202), R12
+    MOVL $(0xff000102), R12
     PINSRD $(0), R12, X7
-    MOVL $(0x03040505), R12
+    MOVL $(0xff030405), R12
     PINSRD $(1), R12, X7
-    MOVL $(0x06070808), R12
+    MOVL $(0xff060708), R12
     PINSRD $(2), R12, X7
-    MOVL $(0x090a0b0b), R12
+    MOVL $(0xff090a0b), R12
     PINSRD $(3), R12, X7
 
-    // Build 6-bit mask (4x 0x3f000000)
+    // Build 6-bit mask (4x 0x0000003f)
     PCMPEQB X8, X8  // set to all ones
     PSRLL $(26), X8
-    PSLLL $(24), X8
 
     // Build a register full of 0x10 == 16
     MOVL $(0x10101010), R12
@@ -28,14 +27,14 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     PINSRD $(1), R12, X9
     MOVLHPS X9, X9
 
-    // Build byte swap map
-    MOVL $(0x00010203), R12
+    // Build dword left shift map
+    MOVL $(0x020100ff), R12
     PINSRD $(0), R12, X10
-    MOVL $(0x04050607), R12
+    MOVL $(0x060504ff), R12
     PINSRD $(1), R12, X10
-    MOVL $(0x08090a0b), R12
+    MOVL $(0x0a0908ff), R12
     PINSRD $(2), R12, X10
-    MOVL $(0x0c0d0e0f), R12
+    MOVL $(0x0e0d0cff), R12
     PINSRD $(3), R12, X10
 
     // Load alphabet to registers
@@ -72,32 +71,28 @@ loop12:
     PSHUFB X7, X0   // shuffle
 
     // output byte 1
-    MOVO X0, X1
-    PSRLL $(2), X1
-    PAND X8, X1
-    PSRLL $(8), X8
+    MOVO X8, X1
+    PAND X0, X1
+    PSRLL $(6), X0
+    PSHUFB X10, X1  // shift left by 8 bits, interestingly this is faster than PSLLL
 
     // output byte 2
-    MOVO X0, X2
-    PSRLL $(4), X2
-    PAND X8, X2
-    PSRLL $(8), X8
+    MOVO X8, X2
+    PAND X0, X2
     POR X2, X1
+    PSRLL $(6), X0
+    PSHUFB X10, X1
 
     // output byte 3
-    MOVO X0, X3
-    PSRLL $(6), X3
-    PAND X8, X3
-    PSRLL $(8), X8
-    POR X3, X1
+    MOVO X8, X2
+    PAND X0, X2
+    POR X2, X1
+    PSRLL $(6), X0
+    PSHUFB X10, X1
 
     // output byte 4
     PAND X8, X0
     POR X1, X0      // 6-bit values 0 <= v <= 63
-
-    PSLLL $(24), X8 // reset 6-bit mask for the next round
-
-    PSHUFB X10, X0  // restore order, BE -> LE
 
     PXOR X5, X5
 
