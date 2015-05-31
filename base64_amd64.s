@@ -9,7 +9,7 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
 
     // Build shuffle map (LE4 -> BE3)
     MOVL $(0xff000102), R12
-    PINSRD $(0), R12, X7
+    PINSRD $(0), R12, X7 // PINSRD: SSE4.1
     MOVL $(0xff030405), R12
     PINSRD $(1), R12, X7
     MOVL $(0xff060708), R12
@@ -94,31 +94,33 @@ loop12:
     PAND X8, X0
     POR X1, X0      // 6-bit values 0 <= v <= 63
 
-    PXOR X5, X5
+    MOVO X9, X5     // 16
+    PSLLW $(1), X5  // 32
+    POR X9, X5      // 48
+    PSUBB X5, X0    // subtract 48
+    MOVO X9, X5     // 16
+    PSLLW $(3), X5  // 128
 
-    MOVO X11, X1    // code[0:16]
+    MOVO X14, X1    // code[48:64]
     PSHUFB X0, X1   // map
-    PSUBB X9, X0    // subtract 16
-    PCMPGTB X0, X5  // (a < b => b) X5[i] is zero
-    PAND X5, X1     // mask result
+    PMAXUB X5, X0   // mask out mapped bytes
+    PADDB X9, X0    // add 16
 
-    MOVO X12, X2    // code[16:32]
-    PSHUFB X0, X2   // map
-    PSUBB X9, X0    // subtract 16
-    PCMPGTB X0, X5  // (a < b => b) X5[i] is either zero, or -1 if it matched previously
-    POR X2, X1      // combine
-    PAND X5, X1     // mask result
-
-    MOVO X13, X3    // code[32:48]
-    PSHUFB X0, X3   // map
-    PSUBB X9, X0    // subtract 16
-    PCMPGTB X0, X5  // (a < b => b) X5[i] is either zero, or -1 if it matched previously
-    POR X3, X1      // combine
-    PAND X5, X1     // mask result
-
-    MOVO X14, X4    // code[48:64]
+    MOVO X13, X4    // code[32:48]
     PSHUFB X0, X4   // map
+    PMAXUB X5, X0   // mask out mapped bytes
+    PADDB X9, X0    // add 16
     POR X4, X1      // combine
+
+    MOVO X12, X3    // code[16:32]
+    PSHUFB X0, X3   // map
+    PMAXUB X5, X0   // mask out mapped bytes
+    PADDB X9, X0    // add 16
+    POR X3, X1      // combine
+
+    MOVO X11, X2    // code[0:16]
+    PSHUFB X0, X2   // map
+    POR X2, X1      // combine
 
     MOVOU X1, 0(R10) // write
     ADDQ $(16), R10  // inc dest ptr
