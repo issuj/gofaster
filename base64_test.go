@@ -6,6 +6,13 @@ import "testing"
 
 //import "fmt"
 
+func fillRand(seed uint64, slice []byte) {
+	rand.Seed(0)
+	for i, _ := range slice {
+		slice[i] = uint8(rand.Uint32())
+	}
+}
+
 func TestBase64Raw(t *testing.T) {
 	var in, out, correct, alphabet []byte
 	in = make([]byte, 258)
@@ -51,9 +58,7 @@ func TestEncode(t *testing.T) {
 		in = make([]byte, length)
 		out = make([]byte, StdEncoding.EncodedLen(length))
 		correct = make([]byte, StdEncoding.EncodedLen(length))
-		for i, _ := range in {
-			in[i] = byte(rand.Uint32())
-		}
+		fillRand(uint64(n), in)
 		StdEncoding.Encode(out, in)
 		base64.StdEncoding.Encode(correct, in)
 		for i, v := range out {
@@ -70,6 +75,7 @@ func BenchmarkStdlib(b *testing.B) {
 	var in, out []byte
 	in = make([]byte, bench_b64_words*3)
 	out = make([]byte, bench_b64_words*4)
+	fillRand(0, in)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		base64.StdEncoding.Encode(out, in)
@@ -80,6 +86,7 @@ func BenchmarkSimd(b *testing.B) {
 	var in, out []byte
 	in = make([]byte, bench_b64_words*3)
 	out = make([]byte, bench_b64_words*4)
+	fillRand(0, in)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		StdEncoding.Encode(out, in)
