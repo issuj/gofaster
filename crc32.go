@@ -1,0 +1,233 @@
+// Algorithm is from:
+// Everything we know about CRC but afraid to forget; Kadatch, A. & Jenkins, M.; 2010
+// Code and it's comments are also mostly directly adapted from their pseudocode in that article.
+
+// WARNING: I didn't bother to actually understand how this works.
+
+package crc32
+
+import "hash"
+import "unsafe"
+
+import "fmt"
+
+const D = 32        // Degree of polynomial
+const N = 4         // Interleave parameter
+const WordBytes = 8 // Size of Word in bytes
+const ShiftMask = (WordBytes * 8) - 1
+const One = 1 << (D - 1)
+const Invert = (1 << D) - 1
+
+type Crc uint32
+type Word uint64
+
+type Poly struct {
+	MulWordByXpowD            [WordBytes][]Crc
+	MulInterleavedWordByXpowD [WordBytes][]Crc
+	Pow2n                     [WordBytes * 8]Crc
+	polynomial                Crc
+}
+
+func (p Poly) Multiply(a, b Crc) Crc {
+	var product Crc
+	var bPowX [D]Crc
+	bPowX[0] = b
+	for k := 0; k < D-1; k++ {
+		// If "a" has non-zero coefficient at x∗∗k, add ((b ∗ x∗∗k) mod P) to the result.
+		if a&(1<<uint(D-k-1)) != 0 {
+			product ^= bPowX[k]
+		}
+
+		// Compute bPowX[k+1] = (b ∗∗ x∗∗(k+1)) mod P.
+		if bPowX[k]&1 != 0 {
+			// If degree of (bPowX[k] ∗ x) is D, then degree of (bPowX[k] ∗ x − P) is less than D.
+			bPowX[k+1] = (bPowX[k] >> 1) ^ p.polynomial
+		} else {
+			bPowX[k+1] = bPowX[k] >> 1
+		}
+	}
+	return product
+}
+
+// returns ((x ** n) mod P).
+func (p Poly) XpowN(n uint) Crc {
+	var result Crc = One
+
+	for i := 0; n != 0; i, n = i+1, n>>1 {
+		if (n & 1) != 0 {
+			result = p.Multiply(result, p.Pow2n[i])
+		}
+	}
+	fmt.Printf("pow %08x\n", result)
+
+	return result
+}
+
+// ”v” occupies ”d” least signficant bits.
+// ”m” occupies D least significant bits.
+func (p Poly) MultiplyUnnormalized(v Crc, d uint, m Crc) Crc {
+	var result Crc
+	for d > D {
+		temp := v & Invert
+		v >>= D
+		d -= D
+		// XpowN returns (x∗∗N mod P(x)).
+		result ^= p.Multiply(temp, p.Multiply(m, p.XpowN(d)))
+	}
+	result ^= p.Multiply(v<<(D-d), m)
+	return result
+}
+
+func (p Poly) CrcWord(value Word) Crc {
+	var result Crc
+	// Unroll this loop or let compiler do it.
+	for b := 0; b < WordBytes; b++ {
+		result ^= p.MulWordByXpowD[b][byte(value)]
+		value >>= 8
+	}
+	return result
+}
+
+func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
+	var crc [N + 1]Crc
+	crc[0] = v ^ u
+	blocks := len(data) / N
+	var i int
+	tables := p.MulInterleavedWordByXpowD
+	var buffer [N]Word
+	for i = 0; i < N*(blocks-1); i += N {
+
+		// Load next N words and move overflow bits into ”next” word.
+		for n := 0; n > N; n++ {
+			crc_n := &crc[n]
+			buffer[n] = Word(*crc_n) ^ data[i+n]
+			if D > WordBytes*8 {
+				crc[n+1] ^= *crc_n >> (WordBytes * 8)
+			}
+			*crc_n = 0
+		}
+		// Compute interleaved word-by-word CRC.
+		for _, table := range tables {
+			for n := 0; n < N; n++ {
+				b := &buffer[n]
+				crc[n] ^= table[byte(*b)]
+				*b >>= 8
+			}
+		}
+		// Combine crc[0] with delayed overflow bits.
+		crc[0] ^= crc[N]
+		crc[N] = 0
+	}
+	crc0 := crc[0]
+	// Process the last N bytes and combine CRCs.
+	for n := 0; n < N; n++ {
+		if n != 0 {
+			crc0 ^= crc[n]
+		}
+		if len(data) > i+n {
+			if D > WordBytes*8 { // <- if on constants
+				crc0 >>= Crc((D - WordBytes*8) & ShiftMask)
+				crc0 ^= p.CrcWord(Word(crc0) ^ data[i+n])
+			} else {
+				crc0 = p.CrcWord(Word(crc0) ^ data[i+n])
+			}
+		}
+	}
+	return (crc0 ^ u)
+}
+
+func (p *Poly) InitWordTables() {
+	raw := make([]Crc, WordBytes*256)
+	for b := 0; b < WordBytes; b++ {
+		p.MulWordByXpowD[b] = raw[256*b : 256*(b+1)]
+		// (K-1-k) * B+D = (W/8-1-byte) * 8+D = D-8 + W - 8 * byte.
+		m := p.XpowN(uint(D - 8 + WordBytes*8 - 8*b))
+		for i := 0; i < 256; i++ {
+			p.MulWordByXpowD[b][i] = p.MultiplyUnnormalized(Crc(i), 8, m)
+		}
+	}
+}
+
+func (p *Poly) InitInterleavedWordTables() {
+	raw := make([]Crc, WordBytes*256)
+	for b := 0; b < WordBytes; b++ {
+		p.MulInterleavedWordByXpowD[b] = raw[256*b : 256*(b+1)]
+		m := p.XpowN(uint(D - 8 + N*WordBytes*8 - 8*b))
+		for i := 0; i < 256; i++ {
+			p.MulInterleavedWordByXpowD[b][i] = p.MultiplyUnnormalized(Crc(i), 8, m)
+		}
+	}
+}
+
+func NewPoly(polynomial Crc) *Poly {
+	p := &Poly{}
+	p.polynomial = polynomial
+	k := Crc(One) >> 1
+	for i := 0; i < WordBytes*8; i++ {
+		p.Pow2n[i] = k
+		fmt.Printf("%08x\n", k)
+		k = p.Multiply(k, k)
+	}
+	p.InitWordTables()
+	p.InitInterleavedWordTables()
+	return p
+}
+
+var IEEE *Poly = NewPoly(0xEDB88320)
+
+// digest represents the partial evaluation of a checksum.
+type digest struct {
+	crc Crc
+	*Poly
+}
+
+func New(p *Poly) hash.Hash32 { return &digest{0, p} }
+
+// NewIEEE creates a new hash.Hash32 computing the CRC-32 checksum
+// using the IEEE polynomial.
+func NewIEEE() hash.Hash32 { return New(IEEE) }
+
+func (d *digest) Size() int { return 4 }
+
+func (d *digest) BlockSize() int { return 1 }
+
+func (d *digest) Reset() { d.crc = 0 }
+
+func update(crc Crc, poly *Poly, p []byte) Crc {
+	fullWords := len(p) / WordBytes
+	words := ((*[131072]Word)(unsafe.Pointer(&p[0])))[:fullWords]
+	crc = poly.CrcInterleavedWordByWord(words, crc, Invert)
+	if leftover := p[fullWords*8:]; len(leftover) > 0 {
+		tail := [1]Word{}
+		for i, b := range leftover {
+			tail[0] |= Word(b) << uint(8*i)
+		}
+		crc = poly.CrcInterleavedWordByWord(tail[:], crc, Invert)
+	}
+	return crc
+}
+
+// Update returns the result of adding the bytes in p to the crc.
+func Update(crc uint32, poly *Poly, p []byte) uint32 {
+	return uint32(update(Crc(crc), poly, p))
+}
+
+func (d *digest) Write(p []byte) (n int, err error) {
+	d.crc = update(d.crc, d.Poly, p)
+	return len(p), nil
+}
+
+func (d *digest) Sum32() uint32 { return uint32(d.crc) }
+
+func (d *digest) Sum(in []byte) []byte {
+	s := d.Sum32()
+	return append(in, byte(s>>24), byte(s>>16), byte(s>>8), byte(s))
+}
+
+// Checksum returns the CRC-32 checksum of data
+// using the polynomial represented by the Table.
+func Checksum(data []byte, p *Poly) uint32 { return Update(0, p, data) }
+
+// ChecksumIEEE returns the CRC-32 checksum of data
+// using the IEEE polynomial.
+func ChecksumIEEE(data []byte) uint32 { return uint32(update(0, IEEE, data)) }
