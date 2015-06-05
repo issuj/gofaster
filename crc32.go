@@ -30,21 +30,12 @@ type Poly struct {
 
 func (p Poly) Multiply(a, b Crc) Crc {
 	var product Crc
-	var bPowX [D]Crc
-	bPowX[0] = b
-	for k := 0; k < D-1; k++ {
-		// If "a" has non-zero coefficient at x∗∗k, add ((b ∗ x∗∗k) mod P) to the result.
-		if a&(1<<uint(D-k-1)) != 0 {
-			product ^= bPowX[k]
+	for k := Crc(One); k > 0; k >>= 1 {
+		if a&k != 0 {
+			product ^= b
 		}
 
-		// Compute bPowX[k+1] = (b ∗∗ x∗∗(k+1)) mod P.
-		if bPowX[k]&1 != 0 {
-			// If degree of (bPowX[k] ∗ x) is D, then degree of (bPowX[k] ∗ x − P) is less than D.
-			bPowX[k+1] = (bPowX[k] >> 1) ^ p.polynomial
-		} else {
-			bPowX[k+1] = bPowX[k] >> 1
-		}
+		b = (b >> 1) ^ (p.polynomial & -(b & 1))
 	}
 	return product
 }
@@ -174,6 +165,8 @@ func NewPoly(polynomial Crc) *Poly {
 }
 
 var IEEE *Poly = NewPoly(0xEDB88320)
+
+//var Castagnoli *Poly = NewPoly(0x82F63B78)
 
 // digest represents the partial evaluation of a checksum.
 type digest struct {
