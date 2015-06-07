@@ -1,10 +1,7 @@
 package crc32
 
 import "hash/crc32" // <- using this as reference
-//import "math/rand"  // <- random bytes
 import "testing"
-
-import "fmt"
 
 func TestUpdate(t *testing.T) {
 	var in []byte
@@ -13,11 +10,13 @@ func TestUpdate(t *testing.T) {
 	for i := 0; i < 256; i++ {
 		in[i] = uint8(i)
 	}
-	fmt.Printf("%08x\n", ChecksumIEEE(in))
-	fmt.Printf("%08x\n", crc32.ChecksumIEEE(in))
-	fmt.Printf("%08x\n", ChecksumIEEE(in[:4]))
-	fmt.Printf("%08x\n", crc32.ChecksumIEEE(in[:4]))
-
+	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 256} {
+		out := ChecksumIEEE(in[:length])
+		correct := crc32.ChecksumIEEE(in[:length])
+		if out != correct {
+			t.Fatal("fail")
+		}
+	}
 }
 
 func BenchmarkStdlib(b *testing.B) {

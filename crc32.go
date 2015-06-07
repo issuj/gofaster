@@ -9,7 +9,7 @@ package crc32
 import "hash"
 import "unsafe"
 
-import "fmt"
+//import "fmt"
 
 const D = 32        // Degree of polynomial
 const N = 4         // Interleave parameter
@@ -49,8 +49,6 @@ func (p Poly) XpowN(n uint) Crc {
 			result = p.Multiply(result, p.Pow2n[i])
 		}
 	}
-	fmt.Printf("pow %08x\n", result)
-
 	return result
 }
 
@@ -69,12 +67,19 @@ func (p Poly) MultiplyUnnormalized(v Crc, d uint, m Crc) Crc {
 	return result
 }
 
+func (p Poly) CrcBytes(bytes []byte, v, u Crc) Crc {
+	v = v ^ u
+	for _, b := range bytes {
+		v = (v >> 8) ^ p.MulWordByXpowD[WordBytes-1][byte(v)^b]
+	}
+	return v ^ u
+}
+
 func (p Poly) CrcWord(value Word) Crc {
 	var result Crc
 	// Unroll this loop or let compiler do it.
-	for b := 0; b < WordBytes; b++ {
+	for b := 0; b < WordBytes; b, value = b+1, value>>8 {
 		result ^= p.MulWordByXpowD[b][byte(value)]
-		value >>= 8
 	}
 	return result
 }
@@ -84,38 +89,37 @@ func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 	crc[0] = v ^ u
 	blocks := len(data) / N
 	var i int
-	tables := p.MulInterleavedWordByXpowD
+	table := p.MulInterleavedWordByXpowD[0][0 : WordBytes*256]
 	var buffer [N]Word
 	for i = 0; i < N*(blocks-1); i += N {
-
 		// Load next N words and move overflow bits into ”next” word.
-		for n := 0; n > N; n++ {
-			crc_n := &crc[n]
-			buffer[n] = Word(*crc_n) ^ data[i+n]
-			if D > WordBytes*8 {
-				crc[n+1] ^= *crc_n >> (WordBytes * 8)
+		for n := 0; n < N; n++ {
+			buffer[n] = Word(crc[n]) ^ data[i+n]
+			if D > WordBytes*8 { // <- if on constants
+				crc[n+1] ^= crc[n] >> (WordBytes * 8)
 			}
-			*crc_n = 0
+			crc[n] = 0
 		}
 		// Compute interleaved word-by-word CRC.
-		for _, table := range tables {
+		for base := 0; base < WordBytes*256; base += 256 {
 			for n := 0; n < N; n++ {
-				b := &buffer[n]
-				crc[n] ^= table[byte(*b)]
-				*b >>= 8
+				buf_n := buffer[n]
+				crc[n] ^= table[base+int(byte(buf_n))]
+				buffer[n] = buf_n >> 8
 			}
 		}
 		// Combine crc[0] with delayed overflow bits.
 		crc[0] ^= crc[N]
 		crc[N] = 0
 	}
+
 	crc0 := crc[0]
 	// Process the last N bytes and combine CRCs.
-	for n := 0; n < N; n++ {
-		if n != 0 {
-			crc0 ^= crc[n]
-		}
-		if len(data) > i+n {
+	if i < N*blocks {
+		for n := 0; n < N; n++ {
+			if n != 0 {
+				crc0 ^= crc[n]
+			}
 			if D > WordBytes*8 { // <- if on constants
 				crc0 >>= Crc((D - WordBytes*8) & ShiftMask)
 				crc0 ^= p.CrcWord(Word(crc0) ^ data[i+n])
@@ -123,6 +127,10 @@ func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 				crc0 = p.CrcWord(Word(crc0) ^ data[i+n])
 			}
 		}
+		i += N
+	}
+	for ; i < len(data); i++ {
+		crc0 = p.CrcWord(Word(crc0) ^ data[i])
 	}
 	return (crc0 ^ u)
 }
@@ -131,10 +139,10 @@ func (p *Poly) InitWordTables() {
 	raw := make([]Crc, WordBytes*256)
 	for b := 0; b < WordBytes; b++ {
 		p.MulWordByXpowD[b] = raw[256*b : 256*(b+1)]
-		// (K-1-k) * B+D = (W/8-1-byte) * 8+D = D-8 + W - 8 * byte.
-		m := p.XpowN(uint(D - 8 + WordBytes*8 - 8*b))
+		m := p.XpowN(uint(D + 8*(WordBytes-b-1)))
 		for i := 0; i < 256; i++ {
 			p.MulWordByXpowD[b][i] = p.MultiplyUnnormalized(Crc(i), 8, m)
+			//fmt.Printf("[%d][%d] %08x %08x, %08x\n", b, i, m, p.MulWordByXpowD[b][i], p.MulInterleavedWordByXpowD[b][i])
 		}
 	}
 }
@@ -143,7 +151,7 @@ func (p *Poly) InitInterleavedWordTables() {
 	raw := make([]Crc, WordBytes*256)
 	for b := 0; b < WordBytes; b++ {
 		p.MulInterleavedWordByXpowD[b] = raw[256*b : 256*(b+1)]
-		m := p.XpowN(uint(D - 8 + N*WordBytes*8 - 8*b))
+		m := p.XpowN(uint(D + 8*(N*WordBytes-b-1)))
 		for i := 0; i < 256; i++ {
 			p.MulInterleavedWordByXpowD[b][i] = p.MultiplyUnnormalized(Crc(i), 8, m)
 		}
@@ -156,15 +164,16 @@ func NewPoly(polynomial Crc) *Poly {
 	k := Crc(One) >> 1
 	for i := 0; i < WordBytes*8; i++ {
 		p.Pow2n[i] = k
-		fmt.Printf("%08x\n", k)
 		k = p.Multiply(k, k)
 	}
-	p.InitWordTables()
 	p.InitInterleavedWordTables()
+	p.InitWordTables()
 	return p
 }
 
 var IEEE *Poly = NewPoly(0xEDB88320)
+
+//var IEEE *Poly = NewPoly(0xeb31d82e)
 
 //var Castagnoli *Poly = NewPoly(0x82F63B78)
 
@@ -187,16 +196,17 @@ func (d *digest) BlockSize() int { return 1 }
 func (d *digest) Reset() { d.crc = 0 }
 
 func update(crc Crc, poly *Poly, p []byte) Crc {
-	fullWords := len(p) / WordBytes
-	words := ((*[131072]Word)(unsafe.Pointer(&p[0])))[:fullWords]
-	crc = poly.CrcInterleavedWordByWord(words, crc, Invert)
-	if leftover := p[fullWords*8:]; len(leftover) > 0 {
-		tail := [1]Word{}
-		for i, b := range leftover {
-			tail[0] |= Word(b) << uint(8*i)
+	const blockSize = 131072
+	nWords := len(p) / WordBytes
+	for f := 0; f < nWords; f += blockSize {
+		end := f + blockSize
+		if nWords < end {
+			end = nWords
 		}
-		crc = poly.CrcInterleavedWordByWord(tail[:], crc, Invert)
+		words := ((*[blockSize]Word)(unsafe.Pointer(&p[f*WordBytes])))[f:end]
+		crc = poly.CrcInterleavedWordByWord(words, crc, Invert)
 	}
+	crc = poly.CrcBytes(p[nWords*WordBytes:], crc, Invert)
 	return crc
 }
 
