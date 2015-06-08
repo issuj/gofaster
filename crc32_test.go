@@ -10,11 +10,11 @@ func TestUpdate(t *testing.T) {
 	for i := 0; i < 256; i++ {
 		in[i] = uint8(i)
 	}
-	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 256} {
+	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 64, 256} {
 		out := ChecksumIEEE(in[:length])
 		correct := crc32.ChecksumIEEE(in[:length])
 		if out != correct {
-			t.Fatal("fail")
+			t.Fatalf("fail %d %08x %08x\n", length, out, correct)
 		}
 	}
 }

@@ -84,33 +84,46 @@ func (p Poly) CrcWord(value Word) Crc {
 	return result
 }
 
+func crc32_8_4(crc uint32, data []Word, table []Crc) (n int, crc0, crc1, crc2, crc3 uint32)
+
+func crc32_8_4_wrap(crc Crc, data []Word, table []Crc) (int, Crc, Crc, Crc, Crc) {
+	a, b, c, d, e := crc32_8_4(uint32(crc), data, table)
+	return a, Crc(b), Crc(c), Crc(d), Crc(e)
+}
+
 func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 	var crc [N + 1]Crc
 	crc[0] = v ^ u
 	blocks := len(data) / N
-	var i int
+	var i int = 0
 	table := p.MulInterleavedWordByXpowD[0][0 : WordBytes*256]
-	var buffer [N]Word
-	for i = 0; i < N*(blocks-1); i += N {
-		// Load next N words and move overflow bits into ”next” word.
-		for n := 0; n < N; n++ {
-			buffer[n] = Word(crc[n]) ^ data[i+n]
-			if D > WordBytes*8 { // <- if on constants
-				crc[n+1] ^= crc[n] >> (WordBytes * 8)
-			}
-			crc[n] = 0
+	if D == 32 && WordBytes == 8 && N == 4 {
+		if blocks-1 > 0 {
+			i, crc[0], crc[1], crc[2], crc[3] = crc32_8_4_wrap(crc[0], data[:N*(blocks-1)], table)
 		}
-		// Compute interleaved word-by-word CRC.
-		for base := 0; base < WordBytes*256; base += 256 {
+	} else {
+		var buffer [N]Word
+		for ; i < N*(blocks-1); i += N {
+			// Load next N words and move overflow bits into ”next” word.
 			for n := 0; n < N; n++ {
-				buf_n := buffer[n]
-				crc[n] ^= table[base+int(byte(buf_n))]
-				buffer[n] = buf_n >> 8
+				buffer[n] = Word(crc[n]) ^ data[i+n]
+				if D > WordBytes*8 { // <- if on constants
+					crc[n+1] ^= crc[n] >> (WordBytes * 8)
+				}
+				crc[n] = 0
 			}
+			// Compute interleaved word-by-word CRC.
+			for base := 0; base < WordBytes*256; base += 256 {
+				for n := 0; n < N; n++ {
+					buf_n := buffer[n]
+					crc[n] ^= table[base+int(byte(buf_n))]
+					buffer[n] = buf_n >> 8
+				}
+			}
+			// Combine crc[0] with delayed overflow bits.
+			crc[0] ^= crc[N]
+			crc[N] = 0
 		}
-		// Combine crc[0] with delayed overflow bits.
-		crc[0] ^= crc[N]
-		crc[N] = 0
 	}
 
 	crc0 := crc[0]
