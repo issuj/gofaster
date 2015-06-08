@@ -1,6 +1,7 @@
 package crc32
 
 import "hash/crc32" // <- using this as reference
+import "math/rand"
 import "testing"
 
 func TestUpdate(t *testing.T) {
@@ -19,9 +20,19 @@ func TestUpdate(t *testing.T) {
 	}
 }
 
+func fillRand(seed uint64, slice []byte) {
+	rand.Seed(0)
+	for i, _ := range slice {
+		slice[i] = uint8(rand.Uint32())
+	}
+}
+
+const bench_bytes = 16384 + 31
+
 func BenchmarkStdlib(b *testing.B) {
 	var in []byte
-	in = make([]byte, 16384)
+	in = make([]byte, bench_bytes)
+	fillRand(0, in)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		crc32.ChecksumIEEE(in)
@@ -30,7 +41,8 @@ func BenchmarkStdlib(b *testing.B) {
 
 func BenchmarkKandJ(b *testing.B) {
 	var in []byte
-	in = make([]byte, 16384)
+	in = make([]byte, bench_bytes)
+	fillRand(0, in)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ChecksumIEEE(in)
