@@ -1,8 +1,10 @@
-// Algorithm is from:
-// Everything we know about CRC but afraid to forget; Kadatch, A. & Jenkins, M.; 2010
+// Algorithm is from: "Everything we know about CRC but afraid to forget"; Kadatch, A. & Jenkins, M.; 2010
+// Also known as the "crcutil" algorithm.
 // Code and it's comments are also mostly directly adapted from their pseudocode in that article.
 
-// WARNING: I didn't bother to actually understand how this works.
+// WARNING: While I understand the theory on why it's faster (splitting the data to N independent
+// streams, allowing instruction-level parallelism), I didn't bother to actually figure out the
+// math part, i.e. why splitting and combining works.
 
 package crc32
 
@@ -86,20 +88,17 @@ func (p Poly) CrcWord(value Word) Crc {
 
 func crc32_8_4(crc uint32, data []Word, table []Crc) (n int, crc0, crc1, crc2, crc3 uint32)
 
-func crc32_8_4_wrap(crc Crc, data []Word, table []Crc) (int, Crc, Crc, Crc, Crc) {
-	a, b, c, d, e := crc32_8_4(uint32(crc), data, table)
-	return a, Crc(b), Crc(c), Crc(d), Crc(e)
-}
-
 func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 	var crc [N + 1]Crc
 	crc[0] = v ^ u
 	blocks := len(data) / N
 	var i int = 0
 	table := p.MulInterleavedWordByXpowD[0][0 : WordBytes*256]
-	if D == 32 && WordBytes == 8 && N == 4 {
+	if D == 32 && WordBytes == 8 && N == 4 { // if on constants
 		if blocks-1 > 0 {
-			i, crc[0], crc[1], crc[2], crc[3] = crc32_8_4_wrap(crc[0], data[:N*(blocks-1)], table)
+			var a, b, c, d uint32
+			i, a, b, c, d = crc32_8_4(uint32(crc[0]), data[:N*(blocks-1)], table)
+			crc[0], crc[1], crc[2], crc[3] = Crc(a), Crc(b), Crc(c), Crc(d)
 		}
 	} else {
 		var buffer [N]Word
@@ -107,7 +106,7 @@ func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 			// Load next N words and move overflow bits into ”next” word.
 			for n := 0; n < N; n++ {
 				buffer[n] = Word(crc[n]) ^ data[i+n]
-				if D > WordBytes*8 { // <- if on constants
+				if D > WordBytes*8 { // if on constants
 					crc[n+1] ^= crc[n] >> (WordBytes * 8)
 				}
 				crc[n] = 0
@@ -133,7 +132,7 @@ func (p Poly) CrcInterleavedWordByWord(data []Word, v, u Crc) Crc {
 			if n != 0 {
 				crc0 ^= crc[n]
 			}
-			if D > WordBytes*8 { // <- if on constants
+			if D > WordBytes*8 { // if on constants
 				crc0 >>= Crc((D - WordBytes*8) & ShiftMask)
 				crc0 ^= p.CrcWord(Word(crc0) ^ data[i+n])
 			} else {

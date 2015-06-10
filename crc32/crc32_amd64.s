@@ -12,9 +12,11 @@ TEXT ·crc32_8_4(SB),NOSPLIT,$0
     XORQ R10, R10 // crc2
     XORQ R11, R11 // crc3
 
+    // WARNING: not checking the table size
+
 loop:
-    CMPQ BX, $(0)
-    JLE end
+    CMPQ BX, $(4)
+    JLT end
     SUBQ $(4), BX
 
     MOVQ R8,  R12
