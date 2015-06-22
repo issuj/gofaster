@@ -7,7 +7,7 @@ Contents, so far:
 * Base64 encoder, interface similar to "encoding/base64"
 * Crc32 with Kadatch & Jenkins (aka crcutil) algorithm, interface similar to "hash/crc32"
 
-Base64 benchmark result (vs stdlib), 16*3k block size:
+Base64 benchmark result (vs stdlib), 3*16k block size:
 ```
 BenchmarkStdlib    10000            169287 ns/op
 BenchmarkSimd     100000             16686 ns/op
