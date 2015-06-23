@@ -27,12 +27,12 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVQ src_base+24(FP),  R8  // source base ptr
     MOVQ code_base+48(FP), R13 // alphabet base ptr
 
-    // Limit run length by either src or dst
-    SHRQ $(2), R11  // dstlen /= 4
+    // Limit run length to shorter of (src, dst)
+    SHRQ $(2), R11  // nWords_dst = dstlen / 4
     XORQ DX, DX
     MOVQ src_len+32(FP), AX
     MOVQ $(3), BX
-    DIVQ BX         // srclen /= 3
+    DIVQ BX         // nWords_src = srclen / 3
     CMPQ R11, AX
     CMOVQLT R11, AX // nWords = min(nWords_dst, nWords_src)
     MULQ BX         // nWords *= 3
@@ -44,12 +44,16 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVO b64_bswap3<>(SB), X7
 
     // Build 6-bit mask (4x 0x0000003f)
-    PCMPEQB X8, X8  // set to all ones
+    PCMPEQB X8,  X8  // set to all ones
     PSRLL $(26), X8
 
     // A register full of 0x10 == 16
     MOVQ b64_byte_16<>(SB), X9
     MOVLHPS X9, X9
+
+    // A register full of 0x20 == 32
+    MOVO X9, X15
+    PSLLL $(1), X15
 
     // Load dword left shift map
     MOVO b64_lshift8<>(SB), X10
@@ -58,12 +62,15 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVQ $(64), R14
     CMPQ R14, code_len+56(FP) // code length
     JLT end                   // skip the whole thing if too short
-    MOVOU 0(R13), X11
+    MOVOU  0(R13), X11
     MOVOU 16(R13), X12
     MOVOU 32(R13), X13
     MOVOU 48(R13), X14
 
 loop12:
+    //
+    // 12 byte loop
+    //
     CMPQ R11, $(16) // CMP to 16 instead of 12, because we do 16 byte reads
     JLT loop3
     SUBQ $(12), R11 // But we decrement remaining count by 12
@@ -78,61 +85,60 @@ loop12:
     PSHUFB X7, X0   // LE -> BE + pad
 
     // unpack byte 1
-    MOVO X8, X1
-    PAND X0, X1
-    PSRLL $(6), X0
+    MOVO X8, X1     // 6-bit mask
+    PAND X0, X1     // select lowmost 6 bits
+    PSRLL $(6), X0  // shift input
     PSHUFB X10, X1  // shift left by 8 bits, interestingly this is faster than PSLLL
 
     // unpack byte 2
-    MOVO X8, X2
-    PAND X0, X2
-    POR X2, X1
-    PSRLL $(6), X0
-    PSHUFB X10, X1
+    MOVO X8, X2     // 6-bit mask
+    PAND X0, X2     // select lowmost 6 bits
+    POR  X2, X1     // combine
+    PSRLL $(6), X0  // shift input
+    PSHUFB X10, X1  // shift left by 8
 
     // unpack byte 3
-    MOVO X8, X2
-    PAND X0, X2
-    POR X2, X1
-    PSRLL $(6), X0
-    PSHUFB X10, X1
+    MOVO X8, X2     // 6-bit mask
+    PAND X0, X2     // select lowmost 6 bits
+    POR  X2, X1     // combine
+    PSRLL $(6), X0  // shift input
+    PSHUFB X10, X1  // shift left by 8
 
     // unpack byte 4
-    PAND X8, X0
-    POR X1, X0      // 6-bit values 0 <= v <= 63
+    PAND X8, X0     // select lowmost 6 bits [ X11  X12   X13   X14 ]
+    POR  X1, X0     // 6-bit values in X0    [0:16 16:32 32:48 48:64]
+
 
     MOVO X9, X5     // 16
-    PSLLW $(1), X5  // 32
-    POR X9, X5      // 48
-    PSUBB X5, X0    // subtract 48
-    MOVO X9, X5     // 16
-    PSLLW $(3), X5  // 128
+    POR X15, X5     // 32 | 16 = 48
+    PSUBB X5, X0    // subtract 48           [-48:-32 -32:-16 -16:0 0:16]
+    PSLLL $(2), X5  // 4 * 48 = 192
 
     //
     // Map 6-bit bytes to alphabet
     //
 
-    MOVO X14, X1    // code[48:64]
+    MOVO  X14, X1   // code[48:64]
     PSHUFB X0, X1   // map
-    PMAXUB X5, X0   // mask out mapped bytes
-    PADDB X9, X0    // add 16
+    PMAXUB X5, X0   // mask out mapped bytes [-48:-32 -32:-16 -16:0 192:192]
+    PADDB  X9, X0   // add 16                [-32:-16 -16:-0   0:16 208:208]
 
-    MOVO X13, X4    // code[32:48]
-    PSHUFB X0, X4   // map
-    PMAXUB X5, X0   // mask out mapped bytes
-    PADDB X9, X0    // add 16
-
-    MOVO X12, X3    // code[16:32]
-    PSHUFB X0, X3   // map
-    PMAXUB X5, X0   // mask out mapped bytes
-    PADDB X9, X0    // add 16
-
-    MOVO X11, X2    // code[0:16]
+    MOVO  X13, X2   // code[32:48]
     PSHUFB X0, X2   // map
+    PMAXUB X5, X0   // mask out mapped bytes [-32:-16 -16:-0 192:192 208:208]
+    PADDB  X9, X0   // add 16                [-16:0     0:16 208:208 224:224]
 
-    POR X4, X1      // combine
-    POR X3, X1      // combine
+    MOVO  X12, X3   // code[16:32]
+    PSHUFB X0, X3   // map
+    PMAXUB X5, X0   // mask out mapped bytes [-16:0 192:192 208:208 224:224]
+    PADDB  X9, X0   // add 16                [ 0:16 208:208 224:224 240:240]
+
+    MOVO  X11, X4   // code[0:16]
+    PSHUFB X0, X4   // map
+
     POR X2, X1      // combine
+    POR X3, X1      // combine
+    POR X4, X1      // combine
 
     MOVOU X1, 0(R10) // write
     ADDQ $(16), R10  // inc dest ptr
@@ -140,6 +146,9 @@ loop12:
     JMP loop12
 
 loop3:
+    //
+    // 3 byte tail loop
+    //
     CMPQ R11, $(3)
     JLT end
     SUBQ $(3), R11
