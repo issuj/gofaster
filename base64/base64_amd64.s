@@ -14,11 +14,17 @@ DATA b64_lshift8<>+0x08(SB)/4, $0x0a0908ff
 DATA b64_lshift8<>+0x0c(SB)/4, $0x0e0d0cff
 GLOBL b64_lshift8<>(SB), RODATA, $16
 
+DATA b64_byte_16<>+0x00(SB)/4, $0x10101010
+DATA b64_byte_16<>+0x04(SB)/4, $0x10101010
+GLOBL b64_byte_16<>(SB), RODATA, $8
+
+// PSHUFB: SSE3
+
 //func base64_enc(dst, src, code []byte) (read, written uint64)
 TEXT ·base64_enc(SB),NOSPLIT,$0
     MOVQ dst_base+0(FP),   R10 // dest base ptr
     MOVQ dst_len+8(FP),    R11 // dest length
-    MOVQ src_base+24(FP),  R8 // source base ptr
+    MOVQ src_base+24(FP),  R8  // source base ptr
     MOVQ code_base+48(FP), R13 // alphabet base ptr
 
     // Limit run length by either src or dst
@@ -41,10 +47,8 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     PCMPEQB X8, X8  // set to all ones
     PSRLL $(26), X8
 
-    // Build a register full of 0x10 == 16
-    MOVL $(0x10101010), R12
-    PINSRD $(0), R12, X9
-    PINSRD $(1), R12, X9
+    // A register full of 0x10 == 16
+    MOVQ b64_byte_16<>(SB), X9
     MOVLHPS X9, X9
 
     // Load dword left shift map
@@ -67,30 +71,33 @@ loop12:
     MOVOU 0(R8), X0 // read
     ADDQ $(12), R8  // inc source ptr
 
+    //
     // Unpack 3x8bit -> 4x6bit
-    PSHUFB X7, X0   // shuffle
+    //
 
-    // output byte 1
+    PSHUFB X7, X0   // LE -> BE + pad
+
+    // unpack byte 1
     MOVO X8, X1
     PAND X0, X1
     PSRLL $(6), X0
     PSHUFB X10, X1  // shift left by 8 bits, interestingly this is faster than PSLLL
 
-    // output byte 2
+    // unpack byte 2
     MOVO X8, X2
     PAND X0, X2
     POR X2, X1
     PSRLL $(6), X0
     PSHUFB X10, X1
 
-    // output byte 3
+    // unpack byte 3
     MOVO X8, X2
     PAND X0, X2
     POR X2, X1
     PSRLL $(6), X0
     PSHUFB X10, X1
 
-    // output byte 4
+    // unpack byte 4
     PAND X8, X0
     POR X1, X0      // 6-bit values 0 <= v <= 63
 
@@ -100,6 +107,10 @@ loop12:
     PSUBB X5, X0    // subtract 48
     MOVO X9, X5     // 16
     PSLLW $(3), X5  // 128
+
+    //
+    // Map 6-bit bytes to alphabet
+    //
 
     MOVO X14, X1    // code[48:64]
     PSHUFB X0, X1   // map
@@ -142,8 +153,8 @@ loop3:
     XORQ DX, DX       // init output
     MOVQ $(4), R12    // init loop counter
 
-    // XLATB tried, it was slower
 loop3_byte:
+    // XLATB tried, it was slower
     SHLL $(8), DX     // shift output
     MOVQ $(0x3f), CX  // create mask
     ANDB AX, CX       // select 6 bits of input with mask
