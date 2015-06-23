@@ -104,8 +104,7 @@ loop12:
     PSRLL $(6), X0  // shift input
     PSHUFB X10, X1  // shift left by 8
 
-    // unpack byte 4
-    PAND X8, X0     // select lowmost 6 bits [ X11  X12   X13   X14 ]
+    // unpack byte 4                         [ X11  X12   X13   X14 ]
     POR  X1, X0     // 6-bit values in X0    [0:16 16:32 32:48 48:64]
 
 
