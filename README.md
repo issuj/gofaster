@@ -18,3 +18,5 @@ Crc32 benchmark result (vs stdlib), 16k block size:
 BenchmarkStdlib    30000             46752 ns/op         351.10 MB/s
 BenchmarkKandJ    200000              7798 ns/op        2104.94 MB/s
 ```
+
+Benchmarks were run on an Intel Core i7-5600U.
