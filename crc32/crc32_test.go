@@ -33,6 +33,7 @@ func BenchmarkStdlib(b *testing.B) {
 	var in []byte
 	in = make([]byte, bench_bytes)
 	fillRand(0, in)
+	b.SetBytes(bench_bytes)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		crc32.ChecksumIEEE(in)
@@ -43,6 +44,7 @@ func BenchmarkKandJ(b *testing.B) {
 	var in []byte
 	in = make([]byte, bench_bytes)
 	fillRand(0, in)
+	b.SetBytes(bench_bytes)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ChecksumIEEE(in)

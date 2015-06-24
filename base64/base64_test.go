@@ -76,6 +76,7 @@ func BenchmarkStdlib(b *testing.B) {
 	in = make([]byte, bench_b64_words*3)
 	out = make([]byte, bench_b64_words*4)
 	fillRand(0, in)
+	b.SetBytes(bench_b64_words * 3)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		base64.StdEncoding.Encode(out, in)
@@ -87,6 +88,7 @@ func BenchmarkSimd(b *testing.B) {
 	in = make([]byte, bench_b64_words*3)
 	out = make([]byte, bench_b64_words*4)
 	fillRand(0, in)
+	b.SetBytes(bench_b64_words * 3)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		StdEncoding.Encode(out, in)

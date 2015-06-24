@@ -9,12 +9,12 @@ Contents, so far:
 
 Base64 benchmark result (vs stdlib), 3*16k block size:
 ```
-BenchmarkStdlib    10000            169287 ns/op
-BenchmarkSimd     100000             16686 ns/op
+BenchmarkStdlib    10000            166960 ns/op         294.39 MB/s
+BenchmarkSimd     100000             16365 ns/op        3003.47 MB/s
 ```
 
 Crc32 benchmark result (vs stdlib), 16k block size:
 ```
-BenchmarkStdlib    30000             47490 ns/op
-BenchmarkKandJ    200000              8002 ns/op
+BenchmarkStdlib    30000             46752 ns/op         351.10 MB/s
+BenchmarkKandJ    200000              7798 ns/op        2104.94 MB/s
 ```
