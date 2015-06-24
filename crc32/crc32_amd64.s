@@ -39,9 +39,6 @@ loop:
     ADDQ $(32), SI
 
 inner:
-    CMPW DX, $(8*256)
-    JGE loop
-
     LEAQ 0(DI)(DX*4), AX
 
     MOVBQZX R12B, CX
@@ -65,8 +62,11 @@ inner:
     LEAQ 0(AX)(CX*4), CX
     XORL 0(CX), R11
     SHRQ $(8), R15
+
+    CMPW DX, $(8*256)
+    JLT inner
     
-    JMP inner
+    JMP loop
 
 end:
     MOVL R8, crc0+64(FP)
