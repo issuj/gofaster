@@ -63,8 +63,23 @@ inner:
     XORL 0(CX), R11
     SHRQ $(8), R15
 
-    CMPW DX, $(8*256)
+    CMPW DX, $(7*256)
     JLT inner
+
+inner_last:
+    LEAQ 0(DI)(DX*4), AX
+
+    LEAQ 0(AX)(R12*4), CX
+    XORL 0(CX), R8
+
+    LEAQ 0(AX)(R13*4), CX
+    XORL 0(CX), R9
+
+    LEAQ 0(AX)(R14*4), CX
+    XORL 0(CX), R10
+
+    LEAQ 0(AX)(R15*4), CX
+    XORL 0(CX), R11
     
     JMP loop
 
