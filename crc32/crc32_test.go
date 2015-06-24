@@ -7,11 +7,10 @@ import "testing"
 func TestUpdate(t *testing.T) {
 	var in []byte
 	//var out, correct uint32
-	in = make([]byte, 256)
-	for i := 0; i < 256; i++ {
-		in[i] = uint8(i)
-	}
-	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 64, 256} {
+	in = make([]byte, 2*WordBytes*131072)
+	fillRand(0, in)
+	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 64, 256, 4097, WordBytes*131072 - 1, WordBytes*131072 + 1, 2 * WordBytes * 131072} {
+		t.Log(length)
 		out := ChecksumIEEE(in[:length])
 		correct := crc32.ChecksumIEEE(in[:length])
 		if out != correct {

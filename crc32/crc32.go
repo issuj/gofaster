@@ -183,11 +183,13 @@ func NewPoly(polynomial Crc) *Poly {
 	return p
 }
 
-var IEEE *Poly = NewPoly(0xEDB88320)
+var IEEE *Poly = NewPoly(0xedb88320)
 
-//var IEEE *Poly = NewPoly(0xeb31d82e)
+//var Koopman *Poly = NewPoly(0xeb31d82e)
 
-//var Castagnoli *Poly = NewPoly(0x82F63B78)
+// Note: Newer x86 CPUs (SSE4.2) have hardware acceleration for calculating CRC32 for
+// the Castagnoli polynomial. Go stdlib has support for that, we don't.
+//var Castagnoli *Poly = NewPoly(0x82f63b78)
 
 // digest represents the partial evaluation of a checksum.
 type digest struct {
@@ -211,11 +213,11 @@ func update(crc Crc, poly *Poly, p []byte) Crc {
 	const blockSize = 131072
 	nWords := len(p) / WordBytes
 	for f := 0; f < nWords; f += blockSize {
-		end := f + blockSize
-		if nWords < end {
-			end = nWords
+		end := blockSize
+		if nWords-f < end {
+			end = nWords - f
 		}
-		words := ((*[blockSize]Word)(unsafe.Pointer(&p[f*WordBytes])))[f:end]
+		words := ((*[blockSize]Word)(unsafe.Pointer(&p[f*WordBytes])))[:end]
 		crc = poly.CrcInterleavedWordByWord(words, crc, Invert)
 	}
 	crc = poly.CrcBytes(p[nWords*WordBytes:], crc, Invert)
