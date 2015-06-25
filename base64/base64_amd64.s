@@ -7,13 +7,6 @@ DATA b64_bswap3<>+0x08(SB)/4, $0xff060708
 DATA b64_bswap3<>+0x0c(SB)/4, $0xff090a0b
 GLOBL b64_bswap3<>(SB), RODATA, $16
 
-// for PSHUFB
-DATA b64_lshift8<>+0x00(SB)/4, $0x020100ff
-DATA b64_lshift8<>+0x04(SB)/4, $0x060504ff
-DATA b64_lshift8<>+0x08(SB)/4, $0x0a0908ff
-DATA b64_lshift8<>+0x0c(SB)/4, $0x0e0d0cff
-GLOBL b64_lshift8<>(SB), RODATA, $16
-
 DATA b64_byte_16<>+0x00(SB)/4, $0x10101010
 DATA b64_byte_16<>+0x04(SB)/4, $0x10101010
 GLOBL b64_byte_16<>(SB), RODATA, $8
@@ -40,7 +33,7 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
 
     // JMP loop3 // <- uncomment to skip SSE part and test/benchmark just the tail loop
 
-    // Load shuffle map (LE4 -> BE3)
+    // Load shuffle map (LE3 -> BE4)
     MOVO b64_bswap3<>(SB), X7
 
     // Build 6-bit mask (4x 0x0000003f)
@@ -54,9 +47,6 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     // A register full of 0x20 == 32
     MOVO X9, X15
     PSLLL $(1), X15
-
-    // Load dword left shift map
-    MOVO b64_lshift8<>(SB), X10
 
     // Load alphabet to registers
     MOVQ $(64), R14
@@ -84,29 +74,33 @@ loop12:
 
     PSHUFB X7, X0   // LE -> BE + pad
 
-    // unpack byte 1
+    // unpack byte 4
     MOVO X8, X1     // 6-bit mask
     PAND X0, X1     // select lowmost 6 bits
     PSRLL $(6), X0  // shift input
-    PSHUFB X10, X1  // shift left by 8 bits, interestingly this is faster than PSLLL
-
-    // unpack byte 2
-    MOVO X8, X2     // 6-bit mask
-    PAND X0, X2     // select lowmost 6 bits
-    POR  X2, X1     // combine
-    PSRLL $(6), X0  // shift input
-    PSHUFB X10, X1  // shift left by 8
+    PSLLO $(3), X1  // shift temp by 24 bits
 
     // unpack byte 3
     MOVO X8, X2     // 6-bit mask
     PAND X0, X2     // select lowmost 6 bits
-    POR  X2, X1     // combine
     PSRLL $(6), X0  // shift input
-    PSHUFB X10, X1  // shift left by 8
+    PSLLO $(2), X2  // shift temp by 16 bits
 
-    // unpack byte 4                         [ X11  X12   X13   X14 ]
-    POR  X1, X0     // 6-bit values in X0    [0:16 16:32 32:48 48:64]
+    // unpack byte 2
+    MOVO X8, X3     // 6-bit mask
+    PAND X0, X3     // select lowmost 6 bits
+    PSRLL $(6), X0  // shift input
+    PSLLO $(1), X3  // shift temp by 8 bits
 
+    // byte 1 is now left alone in X0 at correct position
+
+    POR  X1, X0     // combine
+    POR  X2, X0     // combine
+    POR  X3, X0     // combine
+
+    // X0 now contains 6-bit values in       [ X11  X12   X13   X14 ]
+    // output order, ready to be mapped      [0:16 16:32 32:48 48:64]
+    // to the alphabet
 
     MOVO X9, X5     // 16
     POR X15, X5     // 32 | 16 = 48
