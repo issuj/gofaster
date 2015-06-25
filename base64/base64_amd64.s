@@ -40,13 +40,18 @@ TEXT ·base64_enc(SB),NOSPLIT,$0
     PCMPEQB X8,  X8  // set to all ones
     PSRLL $(26), X8
 
-    // A register full of 0x10 == 16
-    MOVQ b64_byte_16<>(SB), X9
-    MOVLHPS X9, X9
+    // A register full of byte 0x10 == 16
+    MOVQ b64_byte_16<>(SB), X5
+    MOVLHPS X5, X5
 
-    // A register full of 0x20 == 32
-    MOVO X9, X15
-    PSLLL $(1), X15
+    // A register full of byte 0x30 == 48
+    MOVO X5, X6
+    PSLLL $(1), X6
+    POR X5, X6
+
+    // A register full of byte 0x80 == 128
+    MOVO X5, X9
+    PSLLL $(3), X9
 
     // Load alphabet to registers
     MOVQ $(64), R14
@@ -98,33 +103,29 @@ loop12:
     POR  X2, X0     // combine
     POR  X3, X0     // combine
 
-    // X0 now contains 6-bit values in       [ X11  X12   X13   X14 ]
+    // X0 now contains 6-bit values in       [ X11   X12   X13   X14]
     // output order, ready to be mapped      [0:16 16:32 32:48 48:64]
     // to the alphabet
-
-    MOVO X9, X5     // 16
-    POR X15, X5     // 32 | 16 = 48
-    PSUBB X5, X0    // subtract 48           [-48:-32 -32:-16 -16:0 0:16]
-    PSLLL $(2), X5  // 4 * 48 = 192
 
     //
     // Map 6-bit bytes to alphabet
     //
+    PSUBB X6, X0    // subtract 48           [-48:-32 -32:-16 -16:0 0:16]
 
     MOVO  X14, X1   // code[48:64]
     PSHUFB X0, X1   // map
-    PMAXUB X5, X0   // mask out mapped bytes [-48:-32 -32:-16 -16:0 192:192]
-    PADDB  X9, X0   // add 16                [-32:-16 -16:-0   0:16 208:208]
+    PMAXUB X9, X0   // mask out mapped bytes [-48:-32 -32:-16 -16:0 128:128]
+    PADDB  X5, X0   // add 16                [-32:-16 -16:0    0:16 144:144]
 
     MOVO  X13, X2   // code[32:48]
     PSHUFB X0, X2   // map
-    PMAXUB X5, X0   // mask out mapped bytes [-32:-16 -16:-0 192:192 208:208]
-    PADDB  X9, X0   // add 16                [-16:0     0:16 208:208 224:224]
+    PMAXUB X9, X0   // mask out mapped bytes [-32:-16 -16:0 128:128 144:144]
+    PADDB  X5, X0   // add 16                [-16:0    0:16 144:144 160:160]
 
     MOVO  X12, X3   // code[16:32]
     PSHUFB X0, X3   // map
-    PMAXUB X5, X0   // mask out mapped bytes [-16:0 192:192 208:208 224:224]
-    PADDB  X9, X0   // add 16                [ 0:16 208:208 224:224 240:240]
+    PMAXUB X9, X0   // mask out mapped bytes [-16:0 128:128 144:144 160:160]
+    PADDB  X5, X0   // add 16                [ 0:16 144:144 160:160 176:176]
 
     MOVO  X11, X4   // code[0:16]
     PSHUFB X0, X4   // map
