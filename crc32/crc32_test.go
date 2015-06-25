@@ -9,7 +9,7 @@ func TestUpdate(t *testing.T) {
 	//var out, correct uint32
 	in = make([]byte, 2*WordBytes*131072)
 	fillRand(0, in)
-	for _, length := range []int{4, 7, 16, 24, 32, 40, 63, 64, 256, 4097, WordBytes*131072 - 1, WordBytes*131072 + 1, 2 * WordBytes * 131072} {
+	for _, length := range []int{0, 1, 127, 128, 129, 159, 160, 161, 256, 4097, WordBytes*131072 - 1, WordBytes*131072 + 1, 2 * WordBytes * 131072} {
 		t.Log(length)
 		out := ChecksumIEEE(in[:length])
 		correct := crc32.ChecksumIEEE(in[:length])

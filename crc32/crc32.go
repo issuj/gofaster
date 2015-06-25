@@ -211,6 +211,9 @@ func (d *digest) Reset() { d.crc = 0 }
 
 func update(crc Crc, poly *Poly, p []byte) Crc {
 	const blockSize = 131072
+	if len(p) < 128 {
+		return poly.CrcBytes(p, crc, Invert)
+	}
 	nWords := len(p) / WordBytes
 	for f := 0; f < nWords; f += blockSize {
 		end := blockSize
