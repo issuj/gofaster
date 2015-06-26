@@ -8,7 +8,7 @@ TEXT ·crc32_8_4(SB),NOSPLIT,$0
     MOVQ table_base+32(FP), DI // table base ptr
 
     MOVLQZX crc+0(FP), R8 // crc0
-    XORQ R9, R9 // crc1
+    XORQ R9,  R9  // crc1
     XORQ R10, R10 // crc2
     XORQ R11, R11 // crc3
 
@@ -35,51 +35,37 @@ loop:
     XORQ 24(SI), R15
     XORQ R11, R11
 
-    XORQ DX, DX
+    MOVQ $(7), DX
+    MOVQ DI, AX
     ADDQ $(32), SI
 
 inner:
-    LEAQ 0(DI)(DX*4), AX
-
     MOVBQZX R12B, CX
-    LEAQ 0(AX)(CX*4), CX
-    XORL 0(CX), R8
+    XORL 0(AX)(CX*4), R8
     SHRQ $(8), R12
 
     MOVBQZX R13B, CX
-    LEAQ 0(AX)(CX*4), CX
-    XORL 0(CX), R9
+    XORL 0(AX)(CX*4), R9
     SHRQ $(8), R13
-
-    ADDW $(256), DX    // inc loop counter
     
     MOVBQZX R14B, CX
-    LEAQ 0(AX)(CX*4), CX
-    XORL 0(CX), R10
+    XORL 0(AX)(CX*4), R10
     SHRQ $(8), R14
 
     MOVBQZX R15B, CX
-    LEAQ 0(AX)(CX*4), CX
-    XORL 0(CX), R11
+    XORL 0(AX)(CX*4), R11
     SHRQ $(8), R15
 
-    CMPW DX, $(7*256)
-    JLT inner
+    ADDQ $(4*256), AX
+
+    DECQ DX
+    JNZ inner
 
 inner_last:
-    LEAQ 0(DI)(DX*4), AX
-
-    LEAQ 0(AX)(R12*4), CX
-    XORL 0(CX), R8
-
-    LEAQ 0(AX)(R13*4), CX
-    XORL 0(CX), R9
-
-    LEAQ 0(AX)(R14*4), CX
-    XORL 0(CX), R10
-
-    LEAQ 0(AX)(R15*4), CX
-    XORL 0(CX), R11
+    XORL 0(AX)(R12*4), R8
+    XORL 0(AX)(R13*4), R9
+    XORL 0(AX)(R14*4), R10
+    XORL 0(AX)(R15*4), R11
     
     JMP loop
 
