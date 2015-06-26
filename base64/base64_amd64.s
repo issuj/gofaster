@@ -157,14 +157,11 @@ loop3:
     MOVQ $(4), R12    // init loop counter
 
 loop3_byte:
-    // XLATB tried, it was slower
-    SHLL $(8), DX     // shift output
-    MOVQ $(0x3f), CX  // create mask
-    ANDB AX, CX       // select 6 bits of input with mask
-    ADDQ R13, CX      // add code base address to get code symbol address
-    MOVBLZX 0(CX), CX // map
-    ORL CX, DX        // combine
-    SHRL $(6), AX     // shift input
+    SHLQ $(8), DX         // shift output
+    MOVQ $(0x3f), CX      // create mask
+    ANDQ AX, CX           // select 6 bits of input with mask
+    MOVB 0(R13)(CX*1), DL // map
+    SHRQ $(6), AX         // shift input
 
     DECB R12
     JNZ loop3_byte
