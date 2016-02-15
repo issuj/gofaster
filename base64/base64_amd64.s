@@ -112,20 +112,20 @@ loop12:
     // Unpack 3x8bit -> 4x6bit
     //
 
-    PSHUFB X5, X0   // LE -> BE + pad
+    PSHUFB X5, X0   // LE -> BE + pad     X0=[........ aaaaaabb bbbbcccc ccdddddd]
 
-    MOVO X6, X1    // 12 bit mask, long
-    MOVO X7, X2    // 6 bit mask, word
+    MOVO X6, X1    // 12 bit mask, long   X1=[........ ........ ....1111 11111111]
+    MOVO X7, X2    // 6 bit mask, word    X2=[........ ..111111 ........ ..111111]
 
-    PANDN X0, X1   // select high 12 bits
-    PSLLL $(4), X1 // align
-    PAND X6, X0    // select low 12 bits
-    POR X1, X0     // combine
+    PANDN X0, X1   // select high 12 bits X1=[........ aaaaaabb bbbb.... ........]
+    PSLLL $(4), X1 // align               X1=[....aaaa aabbbbbb ........ ........]
+    PAND X6, X0    // select low 12 bits  X0=[........ ........ ....cccc ccdddddd]
+    POR X1, X0     // combine.            X0=[....aaaa aabbbbbb ....cccc ccdddddd]
 
-    PANDN X0, X2   // select high 6 bits
-    PSLLW $(2), X2 // align
-    PAND X7, X0    // select low 6 bits
-    POR X2, X0     // combine
+    PANDN X0, X2   // select high 6 bits  X2=[....aaaa aa...... ....cccc cc......]
+    PSLLW $(2), X2 // align               X2=[..aaaaaa ........ ..cccccc ........]
+    PAND X7, X0    // select low 6 bits   X0=[........ ..bbbbbb ........ ..dddddd]
+    POR X2, X0     // combine             X0=[..aaaaaa ..bbbbbb ..cccccc ..dddddd]
 
     // X0 now contains 6-bit values in       [ X12   X13   X14   X15]
     // byte-swapped order, ready to be       [0:16 16:32 32:48 48:64]
