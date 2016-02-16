@@ -105,7 +105,7 @@ loop12:
     JLT loop3
     SUBQ $(12), R11 // But we decrement remaining count by 12
 
-    MOVOU 0(R8), X0 // read
+    MOVOU 0(R8), X0 // read               X0=[ccdddddd bbbbcccc aaaaaabb xxxxxxxx] (x4)
     ADDQ $(12), R8  // inc source ptr
 
     //
@@ -120,7 +120,7 @@ loop12:
     PANDN X0, X1   // select high 12 bits X1=[........ aaaaaabb bbbb.... ........]
     PSLLL $(4), X1 // align               X1=[....aaaa aabbbbbb ........ ........]
     PAND X6, X0    // select low 12 bits  X0=[........ ........ ....cccc ccdddddd]
-    POR X1, X0     // combine.            X0=[....aaaa aabbbbbb ....cccc ccdddddd]
+    POR X1, X0     // combine             X0=[....aaaa aabbbbbb ....cccc ccdddddd]
 
     PANDN X0, X2   // select high 6 bits  X2=[....aaaa aa...... ....cccc cc......]
     PSLLW $(2), X2 // align               X2=[..aaaaaa ........ ..cccccc ........]
@@ -135,29 +135,34 @@ loop12:
     // Map 6-bit bytes to alphabet
     //
 
-    PSUBB X10, X0   // subtract 48           [-48:-32 -32:-16 -16:0 0:16]
+    // Masking is based on PSHUFB behavior.
+    // PSHUFB looks at four least significant bits, and the most significant bit:
+    // if MSB is 1, a zero byte is mapped; else the 4 LSB are used as index
 
-    MOVO  X15,  X1  // code[48:64]
-    PSHUFB X0,  X1  // map
+    MOVO   X11, X3  // 128
+    PSUBB   X9, X3  // 112
+    PADDB   X0, X3  // data + 112            [112:128 128:144 144:160 160:176]
+    PSUBB  X10, X0  // data - 48             [-48:-32 -32:-16 -16:0     0:16 ]
+
+    MOVO   X12, X4  // alphabet[0:16]
+    PSHUFB  X3, X4  // map [0:16]
+
+    MOVO  X15,  X1  // alphabet[48:64]
+    PSHUFB X0,  X1  // map [48:64]
     PMAXUB X11, X0  // mask out mapped bytes [-48:-32 -32:-16 -16:0 128:128]
     PADDB  X9,  X0  // add 16                [-32:-16 -16:0    0:16 144:144]
 
-    MOVO  X14,  X2  // code[32:48]
-    PSHUFB X0,  X2  // map
+    MOVO  X14,  X2  // alphabet[32:48]
+    PSHUFB X0,  X2  // map [32:48]
     PMAXUB X11, X0  // mask out mapped bytes [-32:-16 -16:0 128:128 144:144]
     PADDB  X9,  X0  // add 16                [-16:0    0:16 144:144 160:160]
 
-    MOVO  X13,  X3  // code[16:32]
-    PSHUFB X0,  X3  // map
-    PMAXUB X11, X0  // mask out mapped bytes [-16:0 128:128 144:144 160:160]
-    PADDB  X9,  X0  // add 16                [ 0:16 144:144 160:160 176:176]
+    MOVO  X13,  X3  // alphabet[16:32]
+    PSHUFB X0,  X3  // map [16:32]
 
-    MOVO  X12,  X4  // code[0:16]
-    PSHUFB X0,  X4  // map
-
+    POR X4, X1      // combine
     POR X2, X1      // combine
     POR X3, X1      // combine
-    POR X4, X1      // combine
 
     PSHUFB X8, X1   // byte swap to output order
 
