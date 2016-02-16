@@ -105,7 +105,7 @@ loop12:
     JLT loop3
     SUBQ $(12), R11 // But we decrement remaining count by 12
 
-    MOVOU 0(R8), X0 // read               X0=[ccdddddd bbbbcccc aaaaaabb xxxxxxxx] (x4)
+    MOVOU 0(R8), X0 // read               X0=[xxxxxxxx ccdddddd bbbbcccc aaaaaabb] (x4)
     ADDQ $(12), R8  // inc source ptr
 
     //
