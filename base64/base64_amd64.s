@@ -141,27 +141,30 @@ loop12:
 
     MOVO   X11, X3  // 128
     PSUBB   X9, X3  // 128 - 16 = 112
-    PADDB   X0, X3  // data + 112            [112:128 128:144 144:160 160:176]
-    PSUBB  X10, X0  // data - 48             [208:224 224:240 240:256   0:16 ]
+    PADDB   X0, X3  // data + 112            [112:128 128:144 144:160 160:176] (1)
+    PSUBB  X10, X0  // data - 48             [208:224 224:240 240:256   0:16 ] (2)
 
     MOVO   X12, X4  // alphabet[0:16]
-    PSHUFB  X3, X4  // map [0:16]
+    PSHUFB  X3, X4  // map [0:16]  (1)
 
-    MOVO  X15,  X1  // alphabet[48:64]
-    PSHUFB X0,  X1  // map [48:64]
-    POR    X11, X0  // mask out mapped bytes [208:224 224:240 240:256 128:144]
-    PADDB  X9,  X0  // add 16                [224:240 240:256   0:16  144:160]
+    MOVO   X15, X1  // alphabet[48:64]
+    PSHUFB  X0, X1  // map [48:64] (2)
 
-    MOVO  X14,  X2  // alphabet[32:48]
-    PSHUFB X0,  X2  // map [32:48]
-    POR    X11, X0  // mask out mapped bytes [224:240 240:256 128:144 144:160]
-    PADDB  X9,  X0  // add 16                [240:256   0:16  144:160 160:176]
+    POR    X11, X3  // mask out mapped bytes [240:256 128:144 144:160 160:176] (1)
+    PSUBB   X9, X3  // sub 16                [224:240 112:128 128:144 144:160] (1)
 
-    MOVO  X13,  X3  // alphabet[16:32]
-    PSHUFB X0,  X3  // map [16:32]
+    MOVO   X13, X2  // alphabet[16:32]
+    PSHUFB  X3, X2  // map [16:32] (1)
+
+    POR    X11, X0  // mask out mapped bytes [208:224 224:240 240:256 128:144] (2)
+    PADDB   X9, X0  // add 16                [224:240 240:256   0:16  144:160] (2)
 
     POR X4, X1      // combine
     POR X2, X1      // combine
+
+    MOVO  X14,  X3  // alphabet[32:48]
+    PSHUFB X0,  X3  // map [32:48] (2)
+
     POR X3, X1      // combine
 
     PSHUFB X8, X1   // byte swap to output order
